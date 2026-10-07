@@ -64,8 +64,138 @@ interface ApiKey {
   hint: string;
 }
 
-export function AgentControl({
-  initialConfig,
+// --- AM/PM publish-time picker -------------------------------------------
+/** "14:30" -> "2:30 PM" */
+function toAmPm(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+/** (2, 30, 'PM') -> "14:30" */
+function to24h(h12: number, mm: number, ampm: 'AM' | 'PM'): string {
+  let h = h12 % 12;
+  if (ampm === 'PM') h += 12;
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/** Preset dropdown options, every 30 minutes, stored as 24h HH:MM. */
+const PRESET_TIMES: string[] = (() => {
+  const arr: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      arr.push(`${String(h).padStart(2, '0')}:${m === 0 ? '00' : '30'}`);
+    }
+  }
+  return arr;
+})();
+
+function PublishTimePicker({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [preset, setPreset] = useState('');
+  const [customOpen, setCustomOpen] = useState(false);
+  const [ch, setCh] = useState('9');
+  const [cm, setCm] = useState('00');
+  const [campm, setCampm] = useState<'AM' | 'PM'>('AM');
+
+  function addTime(t: string) {
+    if (!t || value.includes(t)) return;
+    onChange([...value, t].sort());
+  }
+
+  function removeTime(t: string) {
+    onChange(value.filter((x) => x !== t));
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {value.length === 0 && (
+          <span className="text-sm text-gray-500">No publish times set.</span>
+        )}
+        {[...value].sort().map((t) => (
+          <span
+            key={t}
+            className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-800"
+          >
+            {toAmPm(t)}
+            <button
+              type="button"
+              aria-label={`Remove ${toAmPm(t)}`}
+              onClick={() => removeTime(t)}
+              className="ml-1 font-bold text-indigo-500 hover:text-indigo-900"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <select
+        className={inputClass}
+        value={preset}
+        onChange={(e) => {
+          const v = e.target.value;
+          setPreset('');
+          if (v === '__custom') setCustomOpen(true);
+          else if (v) addTime(v);
+        }}
+      >
+        <option value="">+ Add time…</option>
+        {PRESET_TIMES.filter((t) => !value.includes(t)).map((t) => (
+          <option key={t} value={t}>
+            {toAmPm(t)}
+          </option>
+        ))}
+        <option value="__custom">Custom time…</option>
+      </select>
+      {customOpen && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select className={inputClass} value={ch} onChange={(e) => setCh(e.target.value)} aria-label="Hour">
+            {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+              <option key={h} value={h}>{h}</option>
+            ))}
+          </select>
+          <span>:</span>
+          <select className={inputClass} value={cm} onChange={(e) => setCm(e.target.value)} aria-label="Minute">
+            {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            className={inputClass}
+            value={campm}
+            onChange={(e) => setCampm(e.target.value as 'AM' | 'PM')}
+            aria-label="AM or PM"
+          >
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+          <button
+            type="button"
+            className={btnPrimary}
+            onClick={() => {
+              addTime(to24h(Number(ch), Number(cm), campm));
+              setCustomOpen(false);
+            }}
+          >
+            Add
+          </button>
+          <button type="button" className={btnSecondary} onClick={() => setCustomOpen(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AgentControl({  initialConfig,
   initialRuns,
   apiKeys,
 }: {
@@ -79,7 +209,7 @@ export function AgentControl({
   const [enabled, setEnabled] = useState(initialConfig.enabled);
   const [mode, setMode] = useState(initialConfig.mode);
   const [postsPerDay, setPostsPerDay] = useState(String(initialConfig.postsPerDay));
-  const [publishTimes, setPublishTimes] = useState(initialConfig.publishTimes.join(', '));
+  const [publishTimes, setPublishTimes] = useState<string[]>(initialConfig.publishTimes);
   const [timezone, setTimezone] = useState(initialConfig.timezone);
   const [tone, setTone] = useState(initialConfig.tone);
   const [bannedWords, setBannedWords] = useState(initialConfig.bannedWords.join('\n'));
@@ -98,10 +228,10 @@ export function AgentControl({
     setError(null);
     setNotice(null);
 
-    const times = publishTimes.split(',').map((t) => t.trim()).filter(Boolean);
+    const times = publishTimes;
     for (const t of times) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) {
-        return setError(`Invalid publish time "${t}". Use HH:MM 24-hour format.`);
+        return setError(`Invalid publish time "${t}".`);
       }
     }
     const ppd = Number.parseInt(postsPerDay, 10);
@@ -227,8 +357,8 @@ export function AgentControl({
               <Field label="Posts per day" hint="1–10">
                 <input type="number" min={1} max={10} className={inputClass} value={postsPerDay} onChange={(e) => setPostsPerDay(e.target.value)} />
               </Field>
-              <Field label="Publish times" hint="Comma-separated HH:MM, 24-hour.">
-                <input className={inputClass} value={publishTimes} onChange={(e) => setPublishTimes(e.target.value)} placeholder="09:00, 14:00, 19:00" />
+              <Field label="Publish times" hint="Pick from the dropdown, or add a custom time.">
+                <PublishTimePicker value={publishTimes} onChange={setPublishTimes} />
               </Field>
               <Field label="Timezone">
                 <select className={inputClass} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
