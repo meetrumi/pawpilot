@@ -1,0 +1,61 @@
+# PawPilot backup cron — fallback for Vercel Cron (vercel.json).
+name: Backup cron
+on:
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "*/10 * * * *"
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which cron job to trigger"
+        type: choice
+        options: [agent, publish, refresh, all]
+        default: all
+        required: true
+jobs:
+  agent:
+    name: Daily agent (/api/cron/agent)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'agent' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '0 1 * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Trigger agent cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 6000 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.SITE_URL }}/api/cron/agent")
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then exit 0; fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then exit 1; fi
+  publish:
+    name: Publisher (/api/cron/publish)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'publish' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '*/10 * * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger publish cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 300 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.SITE_URL }}/api/cron/publish")
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then exit 0; fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then exit 1; fi
+  refresh:
+    name: Weekly refresh (/api/cron/refresh)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'refresh' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '0 2 * * 0')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Trigger refresh cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 6000 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.SITE_URL }}/api/cron/refresh")
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then exit 0; fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then exit 1; fi
