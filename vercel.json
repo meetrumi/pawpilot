@@ -1,11 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [
-    // Agent: plans + writes posts daily at 01:00 UTC = 06:00 Asia/Karachi.
-    { "path": "/api/cron/agent", "schedule": "0 1 * * *" },
-    // Publisher: promotes scheduled posts whose time has come, every 10 min.
-    { "path": "/api/cron/publish", "schedule": "*/10 * * * *" },
-    // Refresh: weekly content-refresh pass, Sundays 02:00 UTC = 07:00 PKT.
-    { "path": "/api/cron/refresh", "schedule": "0 2 * * 0" }
-  ]
-}
+{"$schema":"https://openapi.vercel.sh/vercel.json","crons":[{"path":"/api/cron/agent","schedule":"0 1 * * *"},{"path":"/api/cron/publish","schedule":"*/10 * * * *"},{"path":"/api/cron/refresh","schedule":"0 2 * * 0"}]}
