@@ -1,7 +1,7 @@
 // Image generation for the PawPilot agent pipeline.
 //
 // Exactly 2 topical images per post:
-//   primary  -> Google Gemini image generation (gemini-2.5-flash-image),
+//   primary  -> Google Gemini image generation (gemini-3.1-flash-image),
 //               only when GEMINI_API_KEY is set
 //   fallback -> Pollinations image API (no key)
 //   fallback -> Pexels search API, only when PEXELS_API_KEY is set
@@ -34,7 +34,7 @@ export interface GeneratedImages {
 }
 
 const FETCH_TIMEOUT_MS = 90_000;
-const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
+const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
 const GEMINI_IMAGE_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`;
 
@@ -102,9 +102,9 @@ interface GeminiResponse {
 }
 
 /**
- * Generate an image with Google Gemini (gemini-2.5-flash-image, "Nano Banana").
+ * Generate an image with Google Gemini (gemini-3.1-flash-image, "Nano Banana 2").
  * REST shape (verified against Google AI docs + community examples):
- *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent
+ *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent
  *   headers: x-goog-api-key: <key>, Content-Type: application/json
  *   body: { contents: [{ parts: [{ text }] }],
  *           generationConfig: { responseModalities: ["TEXT","IMAGE"],

@@ -77,8 +77,8 @@ with 1s/2s/4s backoff on 402/408/429/5xx. Missing keys are simply skipped.
 
 ### `GEMINI_API_KEY`
 - **Get it:** [Google AI Studio](https://aistudio.google.com/apikey) → "Create API key" (no card required).
-- **Free tier:** generous free quota on `gemini-2.5-flash` (per-minute/daily limits; check AI Studio quotas).
-- **Used for:** TEXT (writer/research/QA chain) **and IMAGES** — when set, the pipeline generates both post images with `gemini-2.5-flash-image` (primary image provider; falls back to Pollinations, then Pexels on any failure).
+- **Free tier:** generous free quota on `gemini-flash-latest` (configurable via `GEMINI_MODEL`) (per-minute/daily limits; check AI Studio quotas).
+- **Used for:** TEXT (writer/research/QA chain) **and IMAGES** — when set, the pipeline generates both post images with `gemini-3.1-flash-image` (configurable via `GEMINI_IMAGE_MODEL`) (primary image provider; falls back to Pollinations, then Pexels on any failure).
 - **What breaks without it:** text chain starts at OpenRouter instead; images use Pollinations. Nothing fails.
 
 ### `OPENROUTER_API_KEY`

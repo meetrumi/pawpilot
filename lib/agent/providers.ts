@@ -85,7 +85,7 @@ function withSystem(prompt: string, system: string | undefined): string {
 }
 
 // ---------------------------------------------------------------- Gemini ---
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
 const geminiCall: ProviderFn = async (prompt, opts) => {
   const key = process.env.GEMINI_API_KEY;
