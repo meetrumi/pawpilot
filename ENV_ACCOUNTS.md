@@ -72,19 +72,19 @@ The reconciled list below covers **every** `process.env.*` the codebase reads
 
 ## Optional — LLM providers (the pipeline works with zero keys)
 
-The writer/research/QA chain tries **Gemini → OpenRouter → Pollinations** (`lib/agent/providers.ts`),
+The writer/research/QA chain tries **Gemini → OpenRouter** (`lib/agent/providers.ts`),
 with 1s/2s/4s backoff on 402/408/429/5xx. Missing keys are simply skipped.
 
 ### `GEMINI_API_KEY`
 - **Get it:** [Google AI Studio](https://aistudio.google.com/apikey) → "Create API key" (no card required).
 - **Free tier:** generous free quota on `gemini-flash-latest` (configurable via `GEMINI_MODEL`) (per-minute/daily limits; check AI Studio quotas).
-- **Used for:** TEXT (writer/research/QA chain) **and IMAGES** — when set, the pipeline generates both post images with `gemini-3.1-flash-image` (configurable via `GEMINI_IMAGE_MODEL`) (primary image provider; falls back to Pollinations, then Pexels on any failure).
-- **What breaks without it:** text chain starts at OpenRouter instead; images use Pollinations. Nothing fails.
+- **Used for:** TEXT (writer/research/QA chain) **and IMAGES** — when set, the pipeline generates both post images with `gemini-3.1-flash-image` (configurable via `GEMINI_IMAGE_MODEL`) (primary image provider; falls back to Pexels on any failure).
+- **What breaks without it:** text chain starts at OpenRouter instead; images use Pexels only.
 
 ### `OPENROUTER_API_KEY`
 - **Get it:** [OpenRouter](https://openrouter.ai/keys) → "Create API Key".
 - **Free tier:** `:free`-suffixed models (used: `meta-llama/llama-3.3-70b-instruct:free`) cost nothing.
-- **What breaks without it:** chain falls through to Pollinations. Nothing fails.
+- **What breaks without it:** text generation fails if Gemini is also down.
 
 ### Zero-key mode (Pollinations)
 - **Get it:** nothing — no account, no key.
@@ -102,7 +102,7 @@ with 1s/2s/4s backoff on 402/408/429/5xx. Missing keys are simply skipped.
 ### `PEXELS_API_KEY`
 - **Get it:** [Pexels API](https://www.pexels.com/api/) → "Get started" → API key (free).
 - **Free tier:** 200 requests/hour, 20,000 requests/month.
-- **What breaks without it:** image generation is Pollinations-only; Pexels stock-photo fallback is skipped.
+- **What breaks without it:** no image fallback when Gemini image generation fails.
 
 ### `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
 - **Get it:** [Supabase](https://supabase.com) → your project → Settings → API → Project URL + `service_role` key.

@@ -15,7 +15,7 @@ Six categories: **dog-training**, **cat-care**, **breed-guides**, **pet-health**
 | Auth (admin) | bcryptjs passwords, `jose` HS256 session JWTs, `otplib` TOTP 2FA, per-route CSRF tokens |
 | Content | `marked` (markdown→HTML), `turndown` (HTML→markdown), `sanitize-html` |
 | Images | `sharp` (WebP conversion), Supabase Storage or local `public/uploads` |
-| AI | Gemini → OpenRouter → Pollinations fallback chain (all optional) |
+| AI | Gemini → OpenRouter fallback chain (both optional) |
 | Deploy | Vercel (site) + GitHub Actions (primary scheduler), Vercel Cron (backup) |
 | Scripts | `dev`, `build`, `typecheck`, `lint`, `db:migrate`, `db:deploy`, `db:seed`, `agent:run`, `hash-password` (see `package.json`) |
 
@@ -64,13 +64,13 @@ Verify it works: `npm run typecheck`, `npm run lint`, `npm run build`.
 
 ## API keys & accounts (all free)
 
-The pipeline works with **zero API keys** — text and image generation fall back to the free Pollinations chain. Set keys to get better/faster models.
+The pipeline needs at least one of `GEMINI_API_KEY` / `OPENROUTER_API_KEY` for text. Set keys to enable generation.
 
 | Env var | Where to get it | Required? | What it does |
 |---|---|---|---|
 | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) | Optional | LLM #1 in the chain (`gemini-2.5-flash`) |
 | `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai/keys) | Optional | LLM #3 (`meta-llama/llama-3.3-70b-instruct:free`) |
-| `PEXELS_API_KEY` | [Pexels API](https://www.pexels.com/api/) | Optional | Fallback stock photos when Pollinations image generation fails |
+| `PEXELS_API_KEY` | [Pexels API](https://www.pexels.com/api/) | Optional | Fallback stock photos when Gemini image generation fails |
 | `RESEND_API_KEY` | [Resend](https://resend.com/api-keys) | Optional | Sends contact-form submissions as email (also needs `CONTACT_TO_EMAIL`) |
 | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | Supabase project → Settings → API | Optional (effectively required in prod) | Persistent image storage. Dev falls back to local `public/uploads`; on Vercel local uploads are ephemeral, so set these in production |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | [@BotFather](https://t.me/BotFather) (new bot → token; then message the bot and read your chat id via `getUpdates`) | Optional | Ops alerts; key status shown in the admin agent panel |

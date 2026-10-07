@@ -162,40 +162,6 @@ const openRouterCall: ProviderFn = async (prompt, opts) => {
   return openAiResponseText(data, 'openrouter');
 };
 
-// ----------------------------------------------------------- Pollinations ---
-// No API key. Spec endpoint: GET https://text.pollinations.ai/{prompt}.
-// For very long prompts we use the OpenAI-compatible POST endpoint instead
-// (same service, still keyless) to avoid URL-length limits.
-const POLLINATIONS_GET_LIMIT = 6000;
-
-const pollinationsCall: ProviderFn = async (prompt, opts) => {
-  const fullPrompt = withSystem(prompt, opts.system);
-  if (fullPrompt.length <= POLLINATIONS_GET_LIMIT) {
-    const url =
-      `https://text.pollinations.ai/${encodeURIComponent(fullPrompt)}` +
-      `?model=openai&temperature=${opts.temperature ?? 0.7}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    checkHttpStatus(res, 'pollinations');
-    const text = (await res.text()).trim();
-    if (!text) throw new Error('pollinations: empty response');
-    return text;
-  }
-  const messages: Array<{ role: string; content: string }> = [];
-  if (opts.system) messages.push({ role: 'system', content: opts.system });
-  messages.push({ role: 'user', content: prompt });
-  const data = await fetchJson('https://text.pollinations.ai/openai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'openai',
-      messages,
-      temperature: opts.temperature ?? 0.7,
-      ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
-    }),
-  });
-  return openAiResponseText(data, 'pollinations');
-};
-
 // ------------------------------------------------------------------ chain ---
 async function callWithRetry(name: string, fn: () => Promise<string>): Promise<string> {
   let lastErr: unknown = new Error(`${name}: unknown error`);
@@ -217,15 +183,17 @@ async function callWithRetry(name: string, fn: () => Promise<string>): Promise<s
 }
 
 /**
- * Call an LLM through the provider chain (Gemini -> OpenRouter ->
- * Pollinations). Providers without keys are skipped. Returns the text and
+ * Call an LLM through the provider chain (Gemini -> OpenRouter).
+ * Providers without keys are skipped. Returns the text and
  * the name of the provider that produced it. Throws only if ALL fail.
+ *
+ * NOTE: Pollinations was removed from the chain (2026-10-08) — their free
+ * text and image APIs now return HTTP 402 (payment required).
  */
 export async function callLLM(prompt: string, opts: CallLlmOptions = {}): Promise<CallLlmResult> {
   const chain: Array<{ name: string; configured: boolean; fn: ProviderFn }> = [
     { name: 'gemini', configured: !!process.env.GEMINI_API_KEY, fn: geminiCall },
     { name: 'openrouter', configured: !!process.env.OPENROUTER_API_KEY, fn: openRouterCall },
-    { name: 'pollinations', configured: true, fn: pollinationsCall },
   ];
   const failures: string[] = [];
   for (const provider of chain) {

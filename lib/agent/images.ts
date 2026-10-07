@@ -76,14 +76,6 @@ async function processToWebp(buf: Buffer): Promise<Buffer> {
   return sharp(buf).resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 80 }).toBuffer();
 }
 
-async function pollinationsImage(prompt: string, seed: number): Promise<Buffer> {
-  const url =
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
-    `?width=1200&height=630&nologo=true&seed=${seed}`;
-  log('fetch', `Pollinations image (seed=${seed})`);
-  return downloadImage(url);
-}
-
 interface PexelsPhoto {
   src?: { large?: string; original?: string };
   alt?: string;
@@ -177,12 +169,12 @@ async function makeImage(
   const alt = altText(topic, primary);
   const prompt = imagePrompt(topic, primary);
 
-  // Provider chain: Gemini (key) -> Pollinations (no key) -> Pexels (key).
+  // Provider chain: Gemini (key) -> Pexels (key).
+  // NOTE: Pollinations removed (2026-10-08) — their image API returns HTTP 402.
   const attempts: Array<{ name: string; run: () => Promise<Buffer> }> = [];
   if (process.env.GEMINI_API_KEY) {
     attempts.push({ name: 'gemini', run: () => geminiImage(prompt) });
   }
-  attempts.push({ name: 'pollinations', run: () => pollinationsImage(prompt, seed) });
   if (process.env.PEXELS_API_KEY) {
     attempts.push({ name: 'pexels', run: () => pexelsImage(topic.keyword) });
   }
