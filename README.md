@@ -15,7 +15,7 @@ Six categories: **dog-training**, **cat-care**, **breed-guides**, **pet-health**
 | Auth (admin) | bcryptjs passwords, `jose` HS256 session JWTs, `otplib` TOTP 2FA, per-route CSRF tokens |
 | Content | `marked` (markdown→HTML), `turndown` (HTML→markdown), `sanitize-html` |
 | Images | `sharp` (WebP conversion), Supabase Storage or local `public/uploads` |
-| AI | Gemini → Groq → OpenRouter → Pollinations fallback chain (all optional) |
+| AI | Gemini → OpenRouter → Pollinations fallback chain (all optional) |
 | Deploy | Vercel (site) + GitHub Actions (primary scheduler), Vercel Cron (backup) |
 | Scripts | `dev`, `build`, `typecheck`, `lint`, `db:migrate`, `db:deploy`, `db:seed`, `agent:run`, `hash-password` (see `package.json`) |
 
@@ -69,7 +69,6 @@ The pipeline works with **zero API keys** — text and image generation fall bac
 | Env var | Where to get it | Required? | What it does |
 |---|---|---|---|
 | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) | Optional | LLM #1 in the chain (`gemini-2.5-flash`) |
-| `GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) | Optional | LLM #2 (`llama-3.3-70b-versatile`) |
 | `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai/keys) | Optional | LLM #3 (`meta-llama/llama-3.3-70b-instruct:free`) |
 | `PEXELS_API_KEY` | [Pexels API](https://www.pexels.com/api/) | Optional | Fallback stock photos when Pollinations image generation fails |
 | `RESEND_API_KEY` | [Resend](https://resend.com/api-keys) | Optional | Sends contact-form submissions as email (also needs `CONTACT_TO_EMAIL`) |
@@ -136,7 +135,7 @@ Admin security model (`lib/auth.ts`, `middleware.ts`):
 
 All cron routes require `Authorization: Bearer <CRON_SECRET>` (401 without it), use transactional `JobLock` rows so overlapping runs never double-execute (409 `job_locked` if a lock is held), and the agent route accepts `?mode=once` for a single manual cycle.
 
-**Actions setup:** the workflow needs these repository secrets (repo Settings → Secrets and variables → Actions): `DATABASE_URL`, `SITE_URL`, `CRON_SECRET` (required); `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (effectively required in production, otherwise generated images are lost); `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY` (optional — the pipeline works with zero keys).
+**Actions setup:** the workflow needs these repository secrets (repo Settings → Secrets and variables → Actions): `DATABASE_URL`, `SITE_URL`, `CRON_SECRET` (required); `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (effectively required in production, otherwise generated images are lost); `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY` (optional — the pipeline works with zero keys).
 
 Manual runs (same code paths as cron):
 

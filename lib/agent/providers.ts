@@ -1,6 +1,6 @@
 // LLM provider chain for the PawPilot agent pipeline.
 //
-// Order: Google Gemini -> Groq -> OpenRouter -> Pollinations (no key).
+// Order: Google Gemini -> OpenRouter -> Pollinations (no key).
 // Providers without a configured API key are skipped. Each provider retries
 // with exponential backoff (1s, 2s, 4s) on 429/408/5xx. An error is thrown
 // only when every provider has failed. All calls are real HTTP via fetch.
@@ -116,8 +116,7 @@ const geminiCall: ProviderFn = async (prompt, opts) => {
   return text;
 };
 
-// ------------------------------------------------------------------ Groq ---
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// ------------------------------------------------------------- OpenRouter ---
 
 function openAiChatBody(model: string, prompt: string, opts: CallLlmOptions): Record<string, unknown> {
   const messages: Array<{ role: string; content: string }> = [];
@@ -142,20 +141,6 @@ function openAiResponseText(data: unknown, provider: string): string {
   if (!text.trim()) throw new Error(`${provider}: empty response`);
   return text;
 }
-
-const groqCall: ProviderFn = async (prompt, opts) => {
-  const key = process.env.GROQ_API_KEY;
-  if (!key) throw new Error('groq: GROQ_API_KEY is not set');
-  const data = await fetchJson('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(openAiChatBody(GROQ_MODEL, prompt, opts)),
-  });
-  return openAiResponseText(data, 'groq');
-};
 
 // ------------------------------------------------------------- OpenRouter ---
 const OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
@@ -232,14 +217,13 @@ async function callWithRetry(name: string, fn: () => Promise<string>): Promise<s
 }
 
 /**
- * Call an LLM through the provider chain (Gemini -> Groq -> OpenRouter ->
+ * Call an LLM through the provider chain (Gemini -> OpenRouter ->
  * Pollinations). Providers without keys are skipped. Returns the text and
  * the name of the provider that produced it. Throws only if ALL fail.
  */
 export async function callLLM(prompt: string, opts: CallLlmOptions = {}): Promise<CallLlmResult> {
   const chain: Array<{ name: string; configured: boolean; fn: ProviderFn }> = [
     { name: 'gemini', configured: !!process.env.GEMINI_API_KEY, fn: geminiCall },
-    { name: 'groq', configured: !!process.env.GROQ_API_KEY, fn: groqCall },
     { name: 'openrouter', configured: !!process.env.OPENROUTER_API_KEY, fn: openRouterCall },
     { name: 'pollinations', configured: true, fn: pollinationsCall },
   ];

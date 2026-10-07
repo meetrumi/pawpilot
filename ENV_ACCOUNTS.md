@@ -72,19 +72,14 @@ The reconciled list below covers **every** `process.env.*` the codebase reads
 
 ## Optional — LLM providers (the pipeline works with zero keys)
 
-The writer/research/QA chain tries **Gemini → Groq → OpenRouter → Pollinations** (`lib/agent/providers.ts`),
+The writer/research/QA chain tries **Gemini → OpenRouter → Pollinations** (`lib/agent/providers.ts`),
 with 1s/2s/4s backoff on 402/408/429/5xx. Missing keys are simply skipped.
 
 ### `GEMINI_API_KEY`
 - **Get it:** [Google AI Studio](https://aistudio.google.com/apikey) → "Create API key" (no card required).
 - **Free tier:** generous free quota on `gemini-2.5-flash` (per-minute/daily limits; check AI Studio quotas).
 - **Used for:** TEXT (writer/research/QA chain) **and IMAGES** — when set, the pipeline generates both post images with `gemini-2.5-flash-image` (primary image provider; falls back to Pollinations, then Pexels on any failure).
-- **What breaks without it:** text chain starts at Groq instead; images use Pollinations. Nothing fails.
-
-### `GROQ_API_KEY`
-- **Get it:** [Groq Console](https://console.groq.com/keys) → "Create API Key" (no card required).
-- **Free tier:** free token quota per model (`llama-3.3-70b-versatile` used here).
-- **What breaks without it:** chain starts at OpenRouter instead. Nothing fails.
+- **What breaks without it:** text chain starts at OpenRouter instead; images use Pollinations. Nothing fails.
 
 ### `OPENROUTER_API_KEY`
 - **Get it:** [OpenRouter](https://openrouter.ai/keys) → "Create API Key".
@@ -172,7 +167,6 @@ For `.github/workflows/backup-cron.yml` only (repo → **Settings → Secrets an
 | `CONTACT_TOKEN_SECRET` | Yes | `openssl rand -hex 32` |
 | `INDEXNOW_KEY` | Recommended | `openssl rand -hex 16` |
 | `GEMINI_API_KEY` | Optional | https://aistudio.google.com/apikey |
-| `GROQ_API_KEY` | Optional | https://console.groq.com/keys |
 | `OPENROUTER_API_KEY` | Optional | https://openrouter.ai/keys |
 | `PEXELS_API_KEY` | Optional | https://www.pexels.com/api/ |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Optional (prod: yes) | Supabase project → Settings → API |

@@ -11,7 +11,6 @@ export interface ApiKeyStatus {
 
 const WATCHED_KEYS: Array<{ label: string; envNames: string[] }> = [
   { label: 'Gemini', envNames: ['GEMINI_API_KEY'] },
-  { label: 'Groq', envNames: ['GROQ_API_KEY'] },
   { label: 'OpenRouter', envNames: ['OPENROUTER_API_KEY'] },
   { label: 'Pexels', envNames: ['PEXELS_API_KEY'] },
   { label: 'Resend', envNames: ['RESEND_API_KEY'] },
