@@ -16,7 +16,7 @@ Six categories: **dog-training**, **cat-care**, **breed-guides**, **pet-health**
 | Content | `marked` (markdown→HTML), `turndown` (HTML→markdown), `sanitize-html` |
 | Images | `sharp` (WebP conversion), Supabase Storage or local `public/uploads` |
 | AI | Gemini → Groq → OpenRouter → Pollinations fallback chain (all optional) |
-| Deploy | Vercel (primary) + Vercel Cron, GitHub Actions backup cron |
+| Deploy | Vercel (site) + GitHub Actions (primary scheduler), Vercel Cron (backup) |
 | Scripts | `dev`, `build`, `typecheck`, `lint`, `db:migrate`, `db:deploy`, `db:seed`, `agent:run`, `hash-password` (see `package.json`) |
 
 Key source files: `lib/agent/pipeline.ts` (agent orchestration), `app/api/cron/*/route.ts` (cron entry points), `lib/auth.ts` (admin auth), `prisma/seed.ts` (categories/author/pages + 5 starter posts).
@@ -84,7 +84,7 @@ The pipeline works with **zero API keys** — text and image generation fall bac
 | `DATABASE_URL` | Supabase or Neon | **Required** | Postgres connection string |
 | `SITE_URL` / `NEXT_PUBLIC_SITE_URL` | Your domain | **Required** | Canonical domain, no trailing slash (drives metadata, sitemap, canonical URLs, IndexNow host) |
 | `CONTACT_TO_EMAIL` / `CONTACT_FROM_EMAIL` | Your inbox | Only with Resend | Delivery address / sender identity for contact emails (sender defaults to `PawPilot <noreply@pawpilot.com>`) |
-| GitHub secrets `CRON_SECRET` + `SITE_URL` | Repo → Settings → Secrets and variables → Actions | Only for backup cron | Used by `.github/workflows/backup-cron.yml` |
+| GitHub secrets `DATABASE_URL`, `SITE_URL`, `CRON_SECRET` (+ optional `SUPABASE_*`, LLM keys) | Repo → Settings → Secrets and variables → Actions | For the primary scheduler | Used by `.github/workflows/backup-cron.yml` (see "Cron jobs") |
 
 > Full per-account breakdown (free-tier limits, what breaks without each key): see **`ENV_ACCOUNTS.md`**.
 
@@ -124,17 +124,19 @@ Admin security model (`lib/auth.ts`, `middleware.ts`):
 
 ## Cron jobs
 
-**Primary: Vercel Cron** (`vercel.json`) — no setup beyond deploy:
+**Primary: GitHub Actions** (`.github/workflows/backup-cron.yml`) — the heavy jobs (agent, refresh) run the pipeline *directly in the Actions runner* via `scripts/agent-run.ts`. This is deliberate: the Vercel Hobby plan kills serverless functions after 60s, but the daily agent run (trend research + up to 3 full post generations with images) takes 10–20 minutes. Actions runners allow up to 6 hours.
 
-| Job | Schedule (UTC) | Route | What it does |
+| Job | Schedule (UTC) | Runs where | What it does |
 |---|---|---|---|
-| Agent | `0 1 * * *` daily (06:00 Asia/Karachi) | `/api/cron/agent` | Researches topics, generates up to `posts_per_day` posts |
-| Publisher | `*/10 * * * *` | `/api/cron/publish` | Promotes due `scheduled` posts → `published`, revalidates cache, pings IndexNow, adds backlinks |
-| Refresh | `0 2 * * 0` Sundays (07:00 PKT) | `/api/cron/refresh` | LLM-refreshes the 3 stalest published posts |
+| Agent | `0 1 * * *` daily (06:00 Asia/Karachi) | Actions runner | Researches topics, generates up to `posts_per_day` posts |
+| Publisher | `*/10 * * * *` | Actions → curls `/api/cron/publish` | Promotes due `scheduled` posts → `published`, revalidates cache, pings IndexNow, adds backlinks (lightweight, safe on serverless) |
+| Refresh | `0 2 * * 0` Sundays (07:00 PKT) | Actions runner | LLM-refreshes the 3 stalest published posts |
 
-All three require `Authorization: Bearer <CRON_SECRET>` (401 without it), use transactional `JobLock` rows so overlapping runs never double-execute (409 `job_locked` if a lock is held), and the agent route accepts `?mode=once` for a single manual cycle.
+**Backup: Vercel Cron** (`vercel.json`) — staggered 35 minutes after the primary (`35 1 * * *` daily for the agent; refresh Sundays 02:00 UTC). It curls the same `/api/cron/*` routes and 409-skips when the Actions job already holds the job lock. The lock has a 30-minute TTL refreshed by a heartbeat while a job is alive (`withJobLock`/`startLockHeartbeat` in `lib/agent/pipeline.ts`), so a timed-out or crashed run clears itself instead of blocking the next runner for hours.
 
-**Backup: GitHub Actions** (`.github/workflows/backup-cron.yml`) — same three jobs, same schedules, via `curl` with the secret from GitHub Actions secrets (`CRON_SECRET`, `SITE_URL`). Enable it so publishing continues if Vercel Cron ever stalls. Job locks make double-firing harmless, not harmful (the loser gets 409 `job_locked`).
+All cron routes require `Authorization: Bearer <CRON_SECRET>` (401 without it), use transactional `JobLock` rows so overlapping runs never double-execute (409 `job_locked` if a lock is held), and the agent route accepts `?mode=once` for a single manual cycle.
+
+**Actions setup:** the workflow needs these repository secrets (repo Settings → Secrets and variables → Actions): `DATABASE_URL`, `SITE_URL`, `CRON_SECRET` (required); `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (effectively required in production, otherwise generated images are lost); `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY` (optional — the pipeline works with zero keys).
 
 Manual runs (same code paths as cron):
 

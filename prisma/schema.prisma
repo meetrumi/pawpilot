@@ -196,6 +196,24 @@ model AdminLoginAttempt {
   @@index([ipHash, attemptedAt])
 }
 
+/// Child/sub-admin users ("Team"). The env-based admin (ADMIN_USERNAME) is
+/// the super-admin with full access and does NOT live in this table.
+/// role is currently always "editor": posts + media + inbox + dashboard.
+/// Editors are denied: agent control center, topics, settings, team, authors,
+/// categories, tags.
+model AdminUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("editor")
+  isActive     Boolean  @default(true)
+  createdBy    String   @default("env-admin")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+}
+
 model PageView {
   id       String   @id @default(cuid())
   path     String

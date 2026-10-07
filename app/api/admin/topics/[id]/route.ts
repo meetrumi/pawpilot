@@ -9,7 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const { id } = await params;
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const { id } = await params;
     await db.topicQueue.delete({ where: { id } });
     return NextResponse.json({ ok: true });

@@ -22,16 +22,32 @@ import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { verify as verifyTotp } from 'otplib';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import type { NextRequest } from 'next/server';
 import { db } from './db';
 import { checkRateLimit, resetRateLimit } from './rate-limit';
 
-export const SESSION_TTL_SECONDS = 12 * 60 * 60; // 12h
+/**
+ * Session lifetimes.
+ * - Default (unchecked "Remember me"): 24h.
+ * - Remember-me checked: 30 days.
+ * Both the JWT `exp` claim and the cookie `maxAge` use the same value so a
+ * remembered session genuinely survives 30 days.
+ */
+export const DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60; // 24h
+export const REMEMBER_ME_TTL_SECONDS = 30 * 24 * 60 * 60; // 30d
 const LOGIN_LIMIT = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15min
 
+/** Admin roles. The env-based admin (ADMIN_USERNAME) is the super-admin with
+ * full access. Child users created in the Team section are editors. */
+export type AdminRole = 'superadmin' | 'editor';
+
 export interface AdminSession {
   username: string;
+  role: AdminRole;
+  /** 'env' for the env super-admin, otherwise the AdminUser id. */
+  userId: string;
   csrf: string;
   expiresAt: number;
 }
@@ -49,7 +65,7 @@ export class AdminAuthError extends Error {
 }
 
 export type LoginResult =
-  | { ok: true; jwt: string; csrf: string }
+  | { ok: true; jwt: string; csrf: string; ttlSeconds: number }
   | { ok: false; locked: true; retryAfterMs: number }
   | { ok: false; locked: false; error: string; status: number };
 
@@ -117,13 +133,18 @@ async function recordLoginAttempt(
   }
 }
 
-async function createSessionToken(username: string): Promise<{ jwt: string; csrf: string }> {
+async function createSessionToken(
+  username: string,
+  role: AdminRole,
+  userId: string,
+  ttlSeconds: number,
+): Promise<{ jwt: string; csrf: string }> {
   const csrf = randomBytes(32).toString('hex');
-  const jwt = await new SignJWT({ csrf })
+  const jwt = await new SignJWT({ csrf, role, userId })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(username)
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
+    .setExpirationTime(`${ttlSeconds}s`)
     .sign(sessionKey());
   return { jwt, csrf };
 }
@@ -133,7 +154,14 @@ async function createSessionToken(username: string): Promise<{ jwt: string; csrf
  *
  * - Rate limit: 5 failed attempts per 15 minutes per (ip, username) -> lockout.
  * - Every attempt (success, failure, lockout-blocked) is written to AdminLoginAttempt.
- * - When TOTP_SECRET is set, a valid TOTP `token` is required as well.
+ * - The env-based admin (ADMIN_USERNAME) logs in as role "superadmin".
+ * - Child users in the AdminUser table log in as role "editor", only when
+ *   isActive. Deactivated/unknown users get "Invalid credentials."
+ *   (no user enumeration).
+ * - When TOTP_SECRET is set, a valid TOTP `token` is required for the env
+ *   super-admin. Child users authenticate with password only.
+ * - `opts.rememberMe`: 30-day session; otherwise 24h. The returned
+ *   ttlSeconds is used for both the JWT exp and the cookie maxAge.
  * - On success the in-memory failure budget for the key is cleared.
  */
 export async function login(
@@ -141,6 +169,7 @@ export async function login(
   password: string,
   ip: string,
   token?: string,
+  opts?: { rememberMe?: boolean },
 ): Promise<LoginResult> {
   const cleanUsername = username.trim();
   const ipHash = sha256Hex(ip);
@@ -165,11 +194,20 @@ export async function login(
   }
 
   // timing-safe username compare + bcrypt (constant-time by design) for the password.
-  const userOk = timingSafeCompare(cleanUsername, configuredUser);
-  const passOk = await bcrypt.compare(password, configuredHash);
+  const isEnvUser = timingSafeCompare(cleanUsername, configuredUser);
+  // Child users (Team) are looked up only when the username is not the env admin.
+  // When no user matches at all we still bcrypt-compare against the env hash so
+  // the response timing does not reveal whether the username exists.
+  const child = isEnvUser
+    ? null
+    : await db.adminUser.findUnique({ where: { username: cleanUsername } });
+  const userOk = isEnvUser || child !== null;
+  const hashToCheck = isEnvUser ? configuredHash : (child?.passwordHash ?? configuredHash);
+  const passOk = await bcrypt.compare(password, hashToCheck);
+  const activeOk = isEnvUser || (child?.isActive ?? false);
 
   let totpOk = true;
-  if (isTotpEnabled()) {
+  if (isEnvUser && isTotpEnabled()) {
     const secret = process.env.TOTP_SECRET as string;
     const cleanToken = (token ?? '').replace(/\s+/g, '');
     try {
@@ -183,7 +221,7 @@ export async function login(
     }
   }
 
-  const ok = userOk && passOk && totpOk;
+  const ok = userOk && passOk && totpOk && activeOk;
   await recordLoginAttempt(cleanUsername, ipHash, ok);
 
   if (!ok) {
@@ -191,11 +229,18 @@ export async function login(
   }
 
   await resetRateLimit(rateKey);
-  const { jwt, csrf } = await createSessionToken(cleanUsername);
-  return { ok: true, jwt, csrf };
+  const role: AdminRole = isEnvUser ? 'superadmin' : 'editor';
+  const userId = isEnvUser ? 'env' : (child as { id: string }).id;
+  const ttlSeconds = opts?.rememberMe ? REMEMBER_ME_TTL_SECONDS : DEFAULT_SESSION_TTL_SECONDS;
+  const { jwt, csrf } = await createSessionToken(cleanUsername, role, userId, ttlSeconds);
+  return { ok: true, jwt, csrf, ttlSeconds };
 }
 
-/** Read and verify the session cookie. Returns null when absent/invalid/expired. */
+/** Read and verify the session cookie. Returns null when absent/invalid/expired.
+ *
+ * For editor sessions the AdminUser row is re-checked on every request: a
+ * deleted or deactivated user loses access immediately, even with a
+ * still-valid JWT. */
 export async function getSession(): Promise<AdminSession | null> {
   const store = await cookies();
   const raw = store.get(sessionCookieName())?.value;
@@ -207,8 +252,16 @@ export async function getSession(): Promise<AdminSession | null> {
     if (typeof payload.sub !== 'string' || typeof payload.csrf !== 'string') {
       return null;
     }
+    const role: AdminRole = payload.role === 'editor' ? 'editor' : 'superadmin';
+    const userId = typeof payload.userId === 'string' ? payload.userId : 'env';
+    if (role === 'editor') {
+      const child = await db.adminUser.findUnique({ where: { id: userId } });
+      if (!child || !child.isActive) return null;
+    }
     return {
       username: payload.sub,
+      role,
+      userId,
       csrf: payload.csrf,
       expiresAt: typeof payload.exp === 'number' ? payload.exp : 0,
     };
@@ -227,6 +280,30 @@ export async function requireSession(): Promise<AdminSession> {
 }
 
 /**
+ * Role gate for super-admin-only routes. Throws AdminAuthError(403) when the
+ * session role is not in `roles`. Pair with requireSession() or use the
+ * `roles` option of requireAdmin() in lib/admin/route.ts.
+ */
+export function requireRole(session: AdminSession, roles: readonly AdminRole[]): void {
+  if (!roles.includes(session.role)) {
+    throw new AdminAuthError(403, 'Forbidden: this area is restricted to the super-admin.');
+  }
+}
+
+/**
+ * Page-level guard for super-admin-only admin pages. Redirects editors (and
+ * signed-out visitors, though the protected layout already handles those) to
+ * the admin dashboard. Call at the top of a Server Component.
+ */
+export async function requireSuperAdminPage(): Promise<AdminSession> {
+  const session = await getSession();
+  if (!session || session.role !== 'superadmin') {
+    redirect(adminBasePath());
+  }
+  return session;
+}
+
+/**
  * CSRF check for mutating /api/admin/* routes. The client must send the
  * `x-csrf-token` header matching the `csrf` claim in the session JWT.
  * Throws AdminAuthError(403) on mismatch.
@@ -238,8 +315,10 @@ export function verifyCsrf(req: NextRequest, session: AdminSession): void {
   }
 }
 
-/** Set the session cookie after a successful login (call inside a Route Handler). */
-export async function setSessionCookie(jwt: string): Promise<void> {
+/** Set the session cookie after a successful login (call inside a Route Handler).
+ * maxAgeSeconds comes from the login result (24h default, 30d when the user
+ * checked "Remember me") and matches the JWT exp. */
+export async function setSessionCookie(jwt: string, maxAgeSeconds: number): Promise<void> {
   const store = await cookies();
   const prod = isProduction();
   store.set(sessionCookieName(), jwt, {
@@ -253,7 +332,7 @@ export async function setSessionCookie(jwt: string): Promise<void> {
     // keeping dev and prod behavior identical. HttpOnly + SameSite=Strict (+
     // Secure in prod) keep the cookie safe; it is only useful on admin routes.
     path: '/',
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge: maxAgeSeconds,
   });
 }
 

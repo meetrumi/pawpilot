@@ -32,19 +32,19 @@ export default async function Home() {
     <main className="mx-auto max-w-6xl px-4 sm:px-6">
       {/* Hero */}
       <section className="py-14 text-center sm:py-20" aria-labelledby="hero-heading">
-        <p className="text-6xl" aria-hidden="true">
-          🐾
+        <p className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-brand-800">
+          <span aria-hidden="true">🐾</span> Fresh guides every day
         </p>
         <h1
           id="hero-heading"
-          className="mx-auto mt-4 max-w-3xl text-4xl font-extrabold tracking-tight text-ink sm:text-5xl"
+          className="mx-auto mt-5 max-w-3xl text-4xl font-extrabold tracking-tight text-ink sm:text-5xl"
         >
           Happy pets, confident owners.
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-ink-soft">
-          Practical pet-care guides written in plain English — dog training,
-          cat care, breed guides, health basics, and honest product reviews,
-          grounded in real life with animals.
+          Stop guessing about your pet. Get clear, practical answers on
+          training, food, health, and gear — written in plain English for
+          real life with real animals.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
@@ -86,7 +86,7 @@ export default async function Home() {
       {/* Category cards */}
       <section id="topics" aria-labelledby="topics-heading" className="mt-16 scroll-mt-6">
         <h2 id="topics-heading" className="text-2xl font-extrabold tracking-tight text-ink">
-          What we cover
+          Find answers by topic
         </h2>
         <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {categories.map((c) => (

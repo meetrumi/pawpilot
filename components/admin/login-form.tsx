@@ -12,6 +12,7 @@ export function LoginForm({ basePath }: { basePath: string }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export function LoginForm({ basePath }: { basePath: string }) {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, token: token || undefined }),
+        body: JSON.stringify({ username, password, token: token || undefined, rememberMe }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -113,6 +114,16 @@ export function LoginForm({ basePath }: { basePath: string }) {
           />
         </label>
       )}
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(e) => setRememberMe(e.target.checked)}
+          disabled={busy || locked}
+          className="h-4 w-4 rounded accent-brand-700"
+        />
+        Remember me for 30 days
+      </label>
       <button type="submit" className={`${btnPrimary} w-full`} disabled={busy || locked}>
         {busy ? 'Signing in…' : 'Sign in'}
       </button>

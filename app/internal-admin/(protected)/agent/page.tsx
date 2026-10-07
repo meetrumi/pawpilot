@@ -4,9 +4,11 @@ import { db } from '@/lib/db';
 import { getAgentConfig } from '@/lib/settings';
 import { getApiKeyStatuses } from '@/lib/admin/api-keys';
 import { AgentControl } from '@/components/admin/agent-control';
+import { requireSuperAdminPage } from '@/lib/auth';
 
 
 export default async function AdminAgentPage() {
+  await requireSuperAdminPage();
   const [config, runs] = await Promise.all([
     getAgentConfig(),
     db.agentRun.findMany({

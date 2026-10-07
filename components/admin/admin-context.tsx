@@ -7,10 +7,15 @@
 
 import { createContext, useCallback, useContext } from 'react';
 
+/** Mirrors AdminRole in lib/auth.ts (kept local so this client module never
+ * imports the server-only auth module). */
+export type AdminClientRole = 'superadmin' | 'editor';
+
 export interface AdminContextValue {
   csrf: string;
   basePath: string;
   username: string;
+  role: AdminClientRole;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);

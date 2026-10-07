@@ -8,7 +8,7 @@ import { requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: false });
+    await requireAdmin(req, { csrf: false, roles: ['superadmin'] });
     const [config, runs] = await Promise.all([
       getAgentConfig(),
       db.agentRun.findMany({

@@ -1,12 +1,16 @@
 // Media storage for the PawPilot agent pipeline.
 //
-// If SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set, images are uploaded to
-// the Supabase Storage bucket `images` via the REST API (no extra npm dep).
-// Otherwise they are written to public/uploads/YYYY/MM/ and served locally.
+// Priority:
+//   1. Vercel Blob (BLOB_READ_WRITE_TOKEN) — the only persistent option on
+//      Vercel serverless; also used by the GitHub Actions runner so images
+//      land in the same place regardless of where the agent runs.
+//   2. Supabase Storage bucket `images` (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).
+//   3. Local public/uploads/YYYY/MM/ (dev only — ephemeral on serverless).
 // A Media row is always created in Postgres.
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { put } from '@vercel/blob';
 import sharp from 'sharp';
 import { db } from './db';
 
@@ -98,6 +102,17 @@ async function uploadToSupabase(buf: Buffer, fileName: string): Promise<string> 
   return objectUrl;
 }
 
+async function uploadToBlob(buf: Buffer, fileName: string): Promise<string> {
+  const objectPath = uploadPath(fileName);
+  console.log(`[storage] uploading ${fileName} to Vercel Blob`);
+  const blob = await put(objectPath, buf, {
+    access: 'public',
+    contentType: 'image/webp',
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+  return blob.url;
+}
+
 async function saveLocal(buf: Buffer, fileName: string): Promise<string> {
   const now = new Date();
   const yyyy = String(now.getFullYear());
@@ -115,14 +130,17 @@ async function saveLocal(buf: Buffer, fileName: string): Promise<string> {
  */
 export async function saveImageFromBuffer(buf: Buffer, opts: SaveImageOptions): Promise<SavedImage> {
   const meta = await getImageMetadata(buf);
+  const useBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
   const useSupabase = !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   let url: string;
-  if (useSupabase) {
+  if (useBlob) {
+    url = await uploadToBlob(buf, opts.fileName);
+  } else if (useSupabase) {
     console.log(`[storage] uploading ${opts.fileName} to Supabase Storage`);
     url = await uploadToSupabase(buf, opts.fileName);
   } else {
-    console.log(`[storage] saving ${opts.fileName} to local public/uploads (no Supabase configured)`);
+    console.log(`[storage] saving ${opts.fileName} to local public/uploads (no Blob/Supabase configured)`);
     url = await saveLocal(buf, opts.fileName);
   }
 

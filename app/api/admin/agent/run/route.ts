@@ -10,7 +10,7 @@ import { requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const pipeline = await loadAgentPipeline();
     if (!pipeline) {
       return NextResponse.json(pipelineMissingResponse(), { status: 501 });

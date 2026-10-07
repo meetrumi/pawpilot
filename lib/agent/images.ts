@@ -1,7 +1,9 @@
 // Image generation for the PawPilot agent pipeline.
 //
 // Exactly 2 topical images per post:
-//   primary  -> Pollinations image API (no key)
+//   primary  -> Google Gemini image generation (gemini-2.5-flash-image),
+//               only when GEMINI_API_KEY is set
+//   fallback -> Pollinations image API (no key)
 //   fallback -> Pexels search API, only when PEXELS_API_KEY is set
 // Bytes are downloaded, converted with sharp to WebP (quality 80, max width
 // 1200), and persisted via lib/storage.ts (Supabase or local public/uploads),
@@ -32,6 +34,9 @@ export interface GeneratedImages {
 }
 
 const FETCH_TIMEOUT_MS = 90_000;
+const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
+const GEMINI_IMAGE_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`;
 
 function log(step: string, detail: string): void {
   console.log(`[images] ${step}: ${detail}`);
@@ -84,6 +89,66 @@ interface PexelsPhoto {
   alt?: string;
 }
 
+interface GeminiPart {
+  text?: string;
+  inlineData?: { mimeType?: string; data?: string };
+  // snake_case variant seen in some SDK-shaped payloads; REST uses camelCase.
+  inline_data?: { mime_type?: string; data?: string };
+}
+
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+  error?: { message?: string; status?: string };
+}
+
+/**
+ * Generate an image with Google Gemini (gemini-2.5-flash-image, "Nano Banana").
+ * REST shape (verified against Google AI docs + community examples):
+ *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent
+ *   headers: x-goog-api-key: <key>, Content-Type: application/json
+ *   body: { contents: [{ parts: [{ text }] }],
+ *           generationConfig: { responseModalities: ["TEXT","IMAGE"],
+ *                               imageConfig: { aspectRatio: "16:9" } } }
+ * The image comes back base64-encoded in
+ * candidates[0].content.parts[].inlineData.data (camelCase in REST JSON).
+ *
+ * Exported for unit testing (the test mocks global fetch, not this logic).
+ */
+export async function geminiImage(prompt: string): Promise<Buffer> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('gemini: GEMINI_API_KEY is not set');
+  log('fetch', `Gemini image (${GEMINI_IMAGE_MODEL})`);
+  const res = await fetch(GEMINI_IMAGE_URL, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '16:9' },
+      },
+    }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`gemini: HTTP ${res.status} ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as GeminiResponse;
+  if (data.error) {
+    throw new Error(`gemini: API error ${data.error.status ?? ''} ${data.error.message ?? ''}`.trim());
+  }
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  for (const part of parts) {
+    const b64 = part.inlineData?.data ?? part.inline_data?.data;
+    if (b64) {
+      const buf = Buffer.from(b64, 'base64');
+      if (buf.length > 1024) return buf;
+    }
+  }
+  throw new Error('gemini: no image data in response');
+}
+
 async function pexelsImage(query: string): Promise<Buffer> {
   const key = process.env.PEXELS_API_KEY;
   if (!key) throw new Error('pexels: PEXELS_API_KEY is not set');
@@ -110,16 +175,33 @@ async function makeImage(
   const baseName = slugify(topic.keyword).slice(0, 60) || 'pawpilot';
   const fileName = `${baseName}-${primary ? 'featured' : 'secondary'}-${seed}.webp`;
   const alt = altText(topic, primary);
-  let raw: Buffer;
-  let kind: string;
-  try {
-    raw = await pollinationsImage(imagePrompt(topic, primary), seed);
-    kind = 'pollinations';
-  } catch (err) {
-    log('warn', `Pollinations failed: ${err instanceof Error ? err.message : err}`);
-    if (!process.env.PEXELS_API_KEY) throw err;
-    raw = await pexelsImage(topic.keyword);
-    kind = 'pexels';
+  const prompt = imagePrompt(topic, primary);
+
+  // Provider chain: Gemini (key) -> Pollinations (no key) -> Pexels (key).
+  const attempts: Array<{ name: string; run: () => Promise<Buffer> }> = [];
+  if (process.env.GEMINI_API_KEY) {
+    attempts.push({ name: 'gemini', run: () => geminiImage(prompt) });
+  }
+  attempts.push({ name: 'pollinations', run: () => pollinationsImage(prompt, seed) });
+  if (process.env.PEXELS_API_KEY) {
+    attempts.push({ name: 'pexels', run: () => pexelsImage(topic.keyword) });
+  }
+
+  let raw: Buffer | null = null;
+  let kind = '';
+  let lastErr: unknown = new Error('no image providers configured');
+  for (const attempt of attempts) {
+    try {
+      raw = await attempt.run();
+      kind = attempt.name;
+      break;
+    } catch (err) {
+      lastErr = err;
+      log('warn', `${attempt.name} failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  if (!raw) {
+    throw lastErr instanceof Error ? lastErr : new Error('all image providers failed');
   }
   const webp = await processToWebp(raw);
   const saved = await saveImageFromBuffer(webp, {

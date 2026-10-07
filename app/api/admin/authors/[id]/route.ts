@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function PUT(req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const { id } = await params;
     const existing = await db.author.findUnique({ where: { id }, select: { id: true } });
     if (!existing) {
@@ -51,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const { id } = await params;
     await db.author.delete({ where: { id } });
     return NextResponse.json({ ok: true });

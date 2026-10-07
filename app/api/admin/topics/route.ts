@@ -26,7 +26,7 @@ const TOPIC_SELECT = {
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: false });
+    await requireAdmin(req, { csrf: false, roles: ['superadmin'] });
     const params = req.nextUrl.searchParams;
     const status = params.get('status');
 
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
     const input = topicCreateSchema.parse(parsed.body);

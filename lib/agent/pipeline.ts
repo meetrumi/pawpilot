@@ -91,6 +91,75 @@ export async function releaseJobLock(jobName: string, lockedBy: string): Promise
   await db.jobLock.deleteMany({ where: { jobName, lockedBy } });
 }
 
+/**
+ * Extend a lock we still hold. Used as a heartbeat by long jobs: as long as
+ * the job process is alive, the lock cannot expire mid-run — but if the
+ * process dies (e.g. a Vercel serverless timeout freezes it), the heartbeats
+ * stop and the lock clears ttlMs after the last beat instead of blocking the
+ * next scheduled runner for hours.
+ */
+export async function refreshJobLock(jobName: string, lockedBy: string, ttlMs: number): Promise<void> {
+  await db.jobLock.updateMany({
+    where: { jobName, lockedBy },
+    data: { expiresAt: new Date(Date.now() + ttlMs) },
+  });
+}
+
+/** Default lock TTL for the heavy jobs (agent daily run, weekly refresh).
+ * Long enough to cover a healthy run, short enough that a dead holder
+ * (e.g. a timed-out Vercel invocation) clears before the staggered backup
+ * runner tries ~35 minutes later. */
+export const JOB_LOCK_TTL_MS = 30 * 60 * 1000; // 30min
+
+/**
+ * Start a lock heartbeat for a lock claimed manually with claimJobLock().
+ * Refreshes the lock every ttlMs/3 (capped at 5 minutes). Returns the
+ * interval — the caller must clearInterval() it and releaseJobLock() when
+ * the job finishes. While the process is alive the lock cannot expire
+ * mid-run; if the process dies, the lock clears ttlMs after the last beat.
+ */
+export function startLockHeartbeat(
+  jobName: string,
+  lockedBy: string,
+  ttlMs: number,
+): NodeJS.Timeout {
+  const heartbeatMs = Math.min(Math.floor(ttlMs / 3), 5 * 60 * 1000);
+  const heartbeat = setInterval(() => {
+    refreshJobLock(jobName, lockedBy, ttlMs).catch((err) =>
+      console.log(`[lock] heartbeat for "${jobName}" failed: ${errMessage(err)}`),
+    );
+  }, heartbeatMs);
+  // Never keep a serverless/CLI process alive just for the heartbeat.
+  if (typeof (heartbeat as unknown as { unref?: () => void }).unref === 'function') {
+    (heartbeat as unknown as { unref: () => void }).unref();
+  }
+  return heartbeat;
+}
+
+/**
+ * Claim a job lock, run `fn`, then release. While `fn` runs, a heartbeat
+ * refreshes the lock every ttlMs/3 (capped at 5 minutes) so a healthy long
+ * run never loses it; a dead run's lock expires on its own.
+ * Returns { claimed: false } when another holder owns a live lock.
+ */
+export async function withJobLock<T>(
+  jobName: string,
+  ttlMs: number,
+  fn: (lockedBy: string) => Promise<T>,
+): Promise<{ claimed: boolean; result?: T }> {
+  const lockedBy = newLockToken(jobName);
+  const claimed = await claimJobLock(jobName, lockedBy, ttlMs);
+  if (!claimed) return { claimed: false };
+  const heartbeat = startLockHeartbeat(jobName, lockedBy, ttlMs);
+  try {
+    const result = await fn(lockedBy);
+    return { claimed: true, result };
+  } finally {
+    clearInterval(heartbeat);
+    await releaseJobLock(jobName, lockedBy);
+  }
+}
+
 // ------------------------------------------------------------ publish slots ---
 function datePartsInTz(date: Date, tz: string): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -411,9 +480,11 @@ export async function runDailyAgent(
     return { ok: false, skipped: true, reason: 'agent_disabled' };
   }
   const lockedBy = newLockToken('daily-agent');
+  let heartbeat: NodeJS.Timeout | null = null;
   if (!opts?.skipLock) {
-    const claimed = await claimJobLock('daily-agent', lockedBy, 3_600_000);
+    const claimed = await claimJobLock('daily-agent', lockedBy, JOB_LOCK_TTL_MS);
     if (!claimed) return { ok: false, skipped: true, reason: 'job_locked' };
+    heartbeat = startLockHeartbeat('daily-agent', lockedBy, JOB_LOCK_TTL_MS);
   }
 
   const run = await db.agentRun.create({
@@ -474,6 +545,7 @@ export async function runDailyAgent(
     error = errMessage(err);
     console.error(`[agent] daily run failed: ${error}`);
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     if (!opts?.skipLock) await releaseJobLock('daily-agent', lockedBy);
   }
 
@@ -527,9 +599,11 @@ async function addBacklinks(newPostId: string, categoryId: string, slug: string,
  */
 export async function publishDuePosts(opts?: { skipLock?: boolean }): Promise<PublishResult> {
   const lockedBy = newLockToken('publish-10min');
+  let heartbeat: NodeJS.Timeout | null = null;
   if (!opts?.skipLock) {
     const claimed = await claimJobLock('publish-10min', lockedBy, 600_000);
     if (!claimed) return { ok: false, skipped: true, reason: 'job_locked', published: [] };
+    heartbeat = startLockHeartbeat('publish-10min', lockedBy, 600_000);
   }
   const published: string[] = [];
   const failed: { slug: string; error: string }[] = [];
@@ -574,6 +648,7 @@ export async function publishDuePosts(opts?: { skipLock?: boolean }): Promise<Pu
       }
     }
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     if (!opts?.skipLock) await releaseJobLock('publish-10min', lockedBy);
   }
   if (failed.length > 0) {
@@ -607,9 +682,11 @@ export async function refreshOldPosts(
     return { ok: false, skipped: true, reason: 'refresh_disabled' };
   }
   const lockedBy = newLockToken('refresh');
+  let heartbeat: NodeJS.Timeout | null = null;
   if (!opts?.skipLock) {
-    const claimed = await claimJobLock('refresh', lockedBy, 3_600_000);
+    const claimed = await claimJobLock('refresh', lockedBy, JOB_LOCK_TTL_MS);
     if (!claimed) return { ok: false, skipped: true, reason: 'job_locked' };
+    heartbeat = startLockHeartbeat('refresh', lockedBy, JOB_LOCK_TTL_MS);
   }
 
   const run = await db.agentRun.create({
@@ -674,6 +751,7 @@ export async function refreshOldPosts(
   } catch (err) {
     error = errMessage(err);
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     if (!opts?.skipLock) await releaseJobLock('refresh', lockedBy);
   }
   await db.agentRun.update({

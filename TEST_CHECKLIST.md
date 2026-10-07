@@ -99,3 +99,62 @@ Every item below was actually executed. "Pass" means observed, not inferred.
 11. **Duplicate-H1 fix (coordinator):** pipeline-generated articles contain an H1 (the title) and the post template renders the title as H1 → pages had 2 H1s. Fixed in `lib/content.ts`: `extractToc` now demotes content H1s to H2 before id injection. Verified on the production build: exactly 1 H1, clean H2 hierarchy.
 12. **Writer best-attempt fix (coordinator):** the base-article loop overwrote a good attempt (484 words) with a worse retry (15 words) and then threw. Now keeps the best attempt across retries; expansion continues from there. This unblocked the litter-box seed post.
 13. **Production publish verification (coordinator):** flipped a seed post to `scheduled`+due, ran `next start` + `GET /api/cron/publish` → `{"ok":true,"published":[...]}`; post page 200 with 1 H1, full JSON-LD set, canonical, TOC anchors, correct `<title>`; sitemap.xml includes the published URL.
+
+---
+
+## 9. Feature build — 2026-10-08 (Gemini images, Team users, remember-me, homepage, scheduler reliability)
+
+Test env: local Postgres via pgserver on :5544 (`pawpilot_test`), fresh `prisma migrate dev --name admin-users` (AdminUser table), `next dev` on :3100 with `ADMIN_USERNAME=testadmin`. All checks live against the real server.
+
+### Feature 1 — Gemini image generation (primary when `GEMINI_API_KEY` set)
+| Check | Result |
+|---|---|
+| Unit test `scripts/test-gemini-image.ts` (mocked `globalThis.fetch` ONLY — real `geminiImage()` logic) | ✅ 10/10 assertions pass: correct endpoint `…/models/gemini-2.5-flash-image:generateContent`, `x-goog-api-key` header, JSON body with `contents[0].parts[0].text`, `responseModalities` incl. `IMAGE`, `imageConfig.aspectRatio: "16:9"`, base64 `inlineData` decoded to bytes; HTTP 400 throws with status+body; imageless response throws; missing key throws |
+| Provider chain in `lib/agent/images.ts` | ✅ Code-verified: Gemini (key set) → Pollinations → Pexels; 2-image contract, sharp WebP q80/w1200, alt text, Media rows unchanged |
+
+### Feature 2 — Team (child admin users, role=editor)
+| Check | Result |
+|---|---|
+| Migration `20261007193953_admin_users` | ✅ Applied cleanly; `AdminUser` table created (id, username unique, passwordHash, role, isActive, createdBy, timestamps) |
+| Superadmin creates `editor1` via `POST /api/admin/team` | ✅ 201, returns public fields only (no password hash) |
+| Editor login | ✅ 200; JWT carries `role: "editor"`, `userId: <AdminUser id>` |
+| Editor GET denied APIs (`/api/admin/agent`, `/settings`, `/authors`, `/categories`, `/tags`, `/topics`, `/team`) | ✅ 403 `{"error":"Forbidden: this area is restricted to the super-admin."}` |
+| Editor POST denied APIs (`/api/admin/agent/run`, `/api/admin/team`) | ✅ 403 |
+| Editor allowed APIs (`/api/admin/posts`, `/media`, `/inbox`) | ✅ 200 |
+| Editor creates a draft post | ✅ 200 `{"ok":true,"post":{…}}` |
+| Editor visits `/test-admin/team`, `/test-admin/agent` pages | ✅ 307 redirect to dashboard; superadmin gets 200 on `/test-admin/team` |
+| Deactivate editor → existing session + new login | ✅ Both 401 immediately (session re-validates `isActive` per request) |
+| Reactivate + reset password | ✅ Old password 401, new password 200 |
+| Delete editor | ✅ `{"ok":true}`, user gone from list |
+
+### Feature 3 — Remember me
+| Check | Result |
+|---|---|
+| Login form renders "Remember me for 30 days" checkbox | ✅ Present in `/test-admin/login` HTML |
+| `rememberMe: true` | ✅ `Set-Cookie` `Max-Age=2592000` (30d); JWT `exp` = now+2592000s |
+| `rememberMe` omitted/false | ✅ `Set-Cookie` `Max-Age=86400` (24h); default session TTL changed from 12h → 24h per spec |
+| Works for env superadmin AND child editor | ✅ Both verified |
+
+### Feature 4 — Homepage polish
+| Check | Result |
+|---|---|
+| Hero copy/hierarchy | ✅ Code-verified: eyebrow badge ("Fresh guides every day"), kept H1 "Happy pets, confident owners.", benefit-driven subcopy ("Stop guessing about your pet…"), "What we cover" → "Find answers by topic". No new deps, no layout redesign |
+
+### Reliability — scheduler (Actions primary, Vercel backup)
+| Check | Result |
+|---|---|
+| `vercel.json` agent cron | ✅ `35 1 * * *` (01:35 UTC, 35 min after Actions 01:00 UTC) |
+| Unit test `scripts/test-job-lock.ts` (real DB + real lock functions) | ✅ 8/8 assertions pass: first claim wins / second rejected; wrong-holder release is a no-op; holder release frees; **dead holder's lock expires after TTL** (simulated Vercel timeout — no `finally`, no heartbeat → claimable after 1.5s TTL); **heartbeat keeps a live lock unclaimable past 2× TTL**; `withJobLock` runs fn + releases; releases on throw |
+| `JOB_LOCK_TTL_MS` | ✅ 30 min (was 1h) for agent/refresh, with heartbeat every ≤5 min — a timed-out Vercel run clears well before the staggered backup runner tries |
+
+### Regression
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ Clean |
+| `npm run lint` | ✅ Clean (0 errors, 0 warnings) |
+| `npm run build` | ✅ Green, incl. new `/internal-admin/team` route |
+
+### Notes
+- The GitHub Actions workflow (`.github/workflows/backup-cron.yml`) now runs the agent + refresh **directly in the runner** (`npx tsx scripts/agent-run.ts`) instead of curling the endpoint — curling can never work on Vercel Hobby (60s serverless timeout vs 10–20 min runs). It needs new repo secrets: `DATABASE_URL`, `SITE_URL`, `CRON_SECRET`, `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, optional LLM keys. The workflow file content must be uploaded to GitHub via the web UI (gh token lacks workflow scope).
+- Editor sessions are re-validated against the `AdminUser` row on every request (deleted/deactivated users lose access immediately).
+- TOTP (when `TOTP_SECRET` is set) applies to the env super-admin only; child users authenticate with password only.

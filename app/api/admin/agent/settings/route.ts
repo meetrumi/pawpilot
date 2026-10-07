@@ -8,7 +8,7 @@ import { readJsonBody, requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function PUT(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
     const input = agentSettingsSchema.parse(parsed.body);

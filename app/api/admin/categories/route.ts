@@ -8,7 +8,7 @@ import { readJsonBody, requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: false });
+    await requireAdmin(req, { csrf: false, roles: ['superadmin'] });
     const categories = await db.category.findMany({
       orderBy: { name: 'asc' },
       include: { _count: { select: { posts: true, topics: true } } },
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
     const input = categoryWriteSchema.parse(parsed.body);

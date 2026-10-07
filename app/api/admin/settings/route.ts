@@ -33,7 +33,7 @@ const DEFAULTS: Record<(typeof SITE_SETTING_KEYS)[number], string> = {
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: false });
+    await requireAdmin(req, { csrf: false, roles: ['superadmin'] });
     const entries = await Promise.all(
       SITE_SETTING_KEYS.map(async (key) => [key, await getSetting(key, DEFAULTS[key])] as const),
     );
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
     const input = settingsWriteSchema.parse(parsed.body);

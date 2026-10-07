@@ -7,7 +7,9 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import {
   AdminAuthError,
+  AdminRole,
   AdminSession,
+  requireRole,
   requireSession,
   verifyCsrf,
 } from '@/lib/auth';
@@ -16,16 +18,20 @@ import {
  * Gate an admin API route: valid session required; CSRF token required for
  * anything that mutates (POST/PUT/PATCH/DELETE). Throws AdminAuthError.
  *
+ * Pass `roles: ['superadmin']` to restrict the route to the super-admin
+ * (editors get a 403). Omit `roles` to allow any authenticated admin.
+ *
  * Calls connection() first so admin APIs are always request-time only and
  * never statically prerendered (with cacheComponents, GET handlers would
  * otherwise be prerendered at build time).
  */
 export async function requireAdmin(
   req: NextRequest,
-  opts: { csrf: boolean },
+  opts: { csrf: boolean; roles?: readonly AdminRole[] },
 ): Promise<AdminSession> {
   await connection();
   const session = await requireSession();
+  if (opts.roles) requireRole(session, opts.roles);
   if (opts.csrf) verifyCsrf(req, session);
   return session;
 }

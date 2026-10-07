@@ -9,25 +9,27 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { AdminApiError, useAdmin, useAdminFetch } from './admin-context';
 
-const NAV: Array<{ href: string; label: string }> = [
+const NAV: Array<{ href: string; label: string; roles?: Array<'superadmin' | 'editor'> }> = [
   { href: '', label: 'Dashboard' },
   { href: '/posts', label: 'Posts' },
-  { href: '/topics', label: 'Topic Queue' },
-  { href: '/agent', label: 'Agent' },
+  { href: '/topics', label: 'Topic Queue', roles: ['superadmin'] },
+  { href: '/agent', label: 'Agent', roles: ['superadmin'] },
   { href: '/media', label: 'Media' },
-  { href: '/categories', label: 'Categories' },
-  { href: '/tags', label: 'Tags' },
-  { href: '/authors', label: 'Authors' },
+  { href: '/categories', label: 'Categories', roles: ['superadmin'] },
+  { href: '/tags', label: 'Tags', roles: ['superadmin'] },
+  { href: '/authors', label: 'Authors', roles: ['superadmin'] },
   { href: '/inbox', label: 'Inbox' },
-  { href: '/settings', label: 'Settings' },
+  { href: '/settings', label: 'Settings', roles: ['superadmin'] },
+  { href: '/team', label: 'Team', roles: ['superadmin'] },
 ];
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { basePath, username } = useAdmin();
+  const { basePath, username, role } = useAdmin();
   const pathname = usePathname();
   const router = useRouter();
   const adminFetch = useAdminFetch();
   const [loggingOut, setLoggingOut] = useState(false);
+  const visibleNav = NAV.filter((item) => !item.roles || item.roles.includes(role));
 
   async function logout() {
     setLoggingOut(true);
@@ -72,7 +74,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav aria-label="Admin" className="border-t border-stone-100">
           <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4">
-            {NAV.map((item) => {
+            {visibleNav.map((item) => {
               const href = `${basePath}${item.href === '' ? '/' : item.href}`;
               // pathname is the rewritten /internal-admin/* path; compare suffixes.
               const active =

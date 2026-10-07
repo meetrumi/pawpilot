@@ -1,9 +1,11 @@
 // Admin tags manager page.
 
 import { TaxonomyManager } from '@/components/admin/taxonomy-manager';
+import { requireSuperAdminPage } from '@/lib/auth';
 
 
-export default function AdminTagsPage() {
+export default async function AdminTagsPage() {
+  await requireSuperAdminPage();
   return (
     <TaxonomyManager
       resource="tags"

@@ -8,7 +8,7 @@ import { readJsonBody, requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: false });
+    await requireAdmin(req, { csrf: false, roles: ['superadmin'] });
     const authors = await db.author.findMany({
       orderBy: { name: 'asc' },
       include: { _count: { select: { posts: true } } },
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
     const parsed = await readJsonBody(req);
     if (!parsed.ok) return parsed.response;
     const input = authorWriteSchema.parse(parsed.body);

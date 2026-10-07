@@ -10,6 +10,26 @@ export const loginSchema = z.object({
   username: z.string().trim().min(1).max(120),
   password: z.string().min(1).max(512),
   token: z.string().trim().max(32).optional(),
+  rememberMe: z.boolean().optional(),
+});
+
+/** Team (child admin user) management — super-admin only. */
+export const teamUserCreateSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .max(60)
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, underscores, or hyphens.'),
+  password: z.string().min(8).max(128),
+  isActive: z.boolean().optional(),
+});
+
+export const teamUserUpdateSchema = z.object({
+  // Reset the password to a new one.
+  password: z.string().min(8).max(128).optional(),
+  // Activate / deactivate the account.
+  isActive: z.boolean().optional(),
 });
 
 export const postStatuses = ['draft', 'review', 'scheduled', 'published'] as const;

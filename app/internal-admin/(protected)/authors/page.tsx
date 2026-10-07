@@ -1,9 +1,11 @@
 // Admin authors manager page.
 
 import { TaxonomyManager } from '@/components/admin/taxonomy-manager';
+import { requireSuperAdminPage } from '@/lib/auth';
 
 
-export default function AdminAuthorsPage() {
+export default async function AdminAuthorsPage() {
+  await requireSuperAdminPage();
   return (
     <TaxonomyManager
       resource="authors"

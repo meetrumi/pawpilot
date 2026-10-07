@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       data.password,
       getClientIp(req),
       data.token,
+      { rememberMe: data.rememberMe ?? false },
     );
 
     if (!result.ok) {
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    await setSessionCookie(result.jwt);
+    await setSessionCookie(result.jwt, result.ttlSeconds);
     return NextResponse.json({
       ok: true,
       csrf: result.csrf,

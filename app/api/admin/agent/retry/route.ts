@@ -7,7 +7,7 @@ import { requireAdmin, toErrorResponse } from '@/lib/admin/route';
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req, { csrf: true });
+    await requireAdmin(req, { csrf: true, roles: ['superadmin'] });
 
     const failedRuns = await db.agentRun.findMany({
       where: { status: 'failed' },

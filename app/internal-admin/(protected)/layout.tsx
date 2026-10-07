@@ -22,7 +22,7 @@ export default async function ProtectedAdminLayout({
   }
   return (
     <AdminProvider
-      value={{ csrf: session.csrf, basePath: adminBasePath(), username: session.username }}
+      value={{ csrf: session.csrf, basePath: adminBasePath(), username: session.username, role: session.role }}
     >
       <AdminShell>{children}</AdminShell>
     </AdminProvider>
