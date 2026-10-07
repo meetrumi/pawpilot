@@ -1,1 +1,1 @@
-{"$schema":"https://openapi.vercel.sh/vercel.json","buildCommand":"prisma migrate deploy && npx tsx prisma/seed.ts --core-only && next build","crons":[{"path":"/api/cron/agent","schedule":"0 1 * * *"},{"path":"/api/cron/publish","schedule":"*/10 * * * *"},{"path":"/api/cron/refresh","schedule":"0 2 * * 0"}]}
+{"$schema":"https://openapi.vercel.sh/vercel.json","buildCommand":"prisma migrate deploy && npx tsx prisma/seed.ts --core-only && next build","crons":[{"path":"/api/cron/agent","schedule":"0 1 * * *"},{"path":"/api/cron/refresh","schedule":"0 2 * * 0"}]}
