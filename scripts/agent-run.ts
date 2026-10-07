@@ -1,8 +1,9 @@
 // PawPilot agent CLI. Registered as `npm run agent:run`.
-// Usage: npx tsx scripts/agent-run.ts --job=agent|publish|refresh   (default: agent)
+// Usage: npx tsx scripts/agent-run.ts --job=agent|publish|refresh|guardian   (default: agent)
 // Runs the same functions as the /api/cron/* routes and prints a JSON summary.
 
 import { runDailyAgent, publishDuePosts, refreshOldPosts } from '../lib/agent/pipeline';
+import { runSlotGuardian } from '../lib/agent/guardian';
 import { db } from '../lib/db';
 
 function arg(name: string): string | undefined {
@@ -23,8 +24,11 @@ async function main(): Promise<void> {
     case 'refresh':
       summary = await refreshOldPosts({ trigger: 'cli' });
       break;
+    case 'guardian':
+      summary = await runSlotGuardian();
+      break;
     default:
-      console.error(`unknown --job="${job}"; expected agent|publish|refresh`);
+      console.error(`unknown --job="${job}"; expected agent|publish|refresh|guardian`);
       process.exit(1);
   }
   console.log(JSON.stringify(summary, null, 2));

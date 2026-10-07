@@ -256,7 +256,10 @@ function prettyTagName(slug: string): string {
     .join(' ');
 }
 
-async function generatePost(topic: FixedTopic, opts?: { runId?: string }): Promise<GeneratedPostSummary> {
+export async function generatePost(
+  topic: FixedTopic,
+  opts?: { runId?: string; scheduledFor?: Date | null },
+): Promise<GeneratedPostSummary> {
   const config = await getAgentConfig();
   let runId = opts?.runId;
   let ownRun = false;
@@ -374,7 +377,8 @@ async function generatePost(topic: FixedTopic, opts?: { runId?: string }): Promi
     const fullAuto = config.mode === 'full-auto';
     // Failed QA always lands in review, even in full-auto mode.
     const status = qa.pass && fullAuto ? 'scheduled' : 'review';
-    const scheduledFor = status === 'scheduled' ? ((await nextPublishSlots(1))[0] ?? null) : null;
+    const scheduledFor =
+      status === 'scheduled' ? (opts?.scheduledFor ?? (await nextPublishSlots(1))[0] ?? null) : null;
 
     const tagConnect: Array<{ id: string }> = [];
     for (const t of draft.tags.slice(0, 6)) {
