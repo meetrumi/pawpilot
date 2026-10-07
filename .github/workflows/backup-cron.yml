@@ -1,0 +1,109 @@
+# PawPilot backup cron — fallback for Vercel Cron (vercel.json).
+#
+# Mirrors the three Vercel Cron schedules. Each job curls the matching
+# /api/cron/* route with the shared CRON_SECRET bearer token. Job locks in the
+# app (409 "job_locked") make double-firing harmless: the loser simply skips,
+# so this workflow can run alongside Vercel Cron safely.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   CRON_SECRET  — same value as the CRON_SECRET env var on Vercel
+#   SITE_URL     — e.g. https://pawpilot.com (no trailing slash)
+#
+# NOTE: GitHub auto-disables scheduled workflows after 60 days of repo
+# inactivity — re-enable under Actions -> Backup cron if that happens.
+# Vercel Cron remains the primary scheduler; this is the backup.
+
+name: Backup cron
+
+on:
+  schedule:
+    # Daily agent run: research topics + generate posts. 01:00 UTC = 06:00 Asia/Karachi.
+    - cron: "0 1 * * *"
+    # Publisher: promote scheduled posts whose time has come, every 10 min.
+    - cron: "*/10 * * * *"
+    # Refresh: weekly content-refresh pass, Sundays 02:00 UTC = 07:00 PKT.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which cron job to trigger"
+        type: choice
+        options: [agent, publish, refresh, all]
+        default: all
+        required: true
+
+jobs:
+  agent:
+    name: Daily agent (/api/cron/agent)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'agent' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '0 1 * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Trigger agent cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 6000 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/agent")
+          cat /tmp/pawpilot-cron.json; echo
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then
+            echo "WARNING: job already locked (primary cron won the race) — treating as OK"
+            exit 0
+          fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "ERROR: agent cron failed with HTTP $code"
+            exit 1
+          fi
+
+  publish:
+    name: Publisher (/api/cron/publish)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'publish' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '*/10 * * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger publish cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 300 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/publish")
+          cat /tmp/pawpilot-cron.json; echo
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then
+            echo "WARNING: job already locked (primary cron won the race) — treating as OK"
+            exit 0
+          fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "ERROR: publish cron failed with HTTP $code"
+            exit 1
+          fi
+
+  refresh:
+    name: Weekly refresh (/api/cron/refresh)
+    if: >
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'refresh' || inputs.job == 'all'))
+      || (github.event_name == 'schedule' && github.event.schedule == '0 2 * * 0')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Trigger refresh cron
+        run: |
+          set -u
+          code=$(curl -sS -o /tmp/pawpilot-cron.json -w '%{http_code}' --max-time 6000 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.SITE_URL }}/api/cron/refresh")
+          cat /tmp/pawpilot-cron.json; echo
+          echo "HTTP $code"
+          if [ "$code" = "409" ]; then
+            echo "WARNING: job already locked (primary cron won the race) — treating as OK"
+            exit 0
+          fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "ERROR: refresh cron failed with HTTP $code"
+            exit 1
+          fi

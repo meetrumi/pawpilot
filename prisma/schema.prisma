@@ -1,0 +1,208 @@
+// PawPilot — Phase A data layer.
+// Datasource: PostgreSQL. Connection comes from DATABASE_URL env only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Author {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  bio         String   @db.Text
+  role        String   @default("Contributor")
+  avatarUrl   String?
+  credentials String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  posts       Post[]
+}
+
+model Category {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  description String       @db.Text
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  posts       Post[]
+  topics      TopicQueue[]
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  slug  String @unique
+  name  String
+  posts Post[]
+}
+
+model Post {
+  id                      String    @id @default(cuid())
+  slug                    String    @unique
+  title                   String
+  metaTitle               String
+  metaDescription         String
+  excerpt                 String    @db.Text
+  contentHtml             String    @db.Text
+  contentText             String    @db.Text
+  featuredImageUrl        String?
+  featuredImageAlt        String?
+  secondaryImageUrl       String?
+  secondaryImageAlt       String?
+  secondaryImageAfterHeading String?
+  status                  String    @default("draft") // draft | review | scheduled | published
+  publishAt               DateTime?
+  scheduledFor            DateTime?
+  authorId                String
+  author                  Author    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  categoryId              String
+  category                Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tags                    Tag[]
+  faqJson                 String?   @db.Text // JSON [{q,a}]
+  keyTakeaways            String?   @db.Text // JSON [strings]
+  wordCount               Int       @default(0)
+  readingTimeMin          Int       @default(0)
+  qaScore                 Float?
+  qaReport                String?   @db.Text // JSON
+  canonicalUrl            String?
+  noindex                 Boolean   @default(false)
+  views                   Int       @default(0)
+  internalLinksAdded      Boolean   @default(false)
+  indexNowPinged          Boolean   @default(false)
+  runId                   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([status, publishAt])
+  @@index([categoryId])
+}
+
+model Page {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  contentHtml     String   @db.Text
+  metaTitle       String
+  metaDescription String
+  updatedAt       DateTime @updatedAt
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  alt       String?
+  fileName  String
+  width     Int?
+  height    Int?
+  mimeType  String?
+  sizeBytes Int?
+  source    String   @default("upload")
+  createdAt DateTime @default(now())
+}
+
+model TopicQueue {
+  id                String    @id @default(cuid())
+  keyword           String
+  secondaryKeywords String[]
+  searchIntent      String    @default("informational")
+  rationale         String    @db.Text
+  scoresJson        String    @db.Text // JSON
+  status            String    @default("pending") // pending | approved | rejected | used
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  source            String    @default("agent")
+  runId             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model AgentRun {
+  id           String     @id @default(cuid())
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
+  mode         String     @default("auto")
+  trigger      String     @default("cron")
+  status       String     @default("running") // running | success | failed | partial
+  postsPlanned Int        @default(0)
+  postsCreated Int        @default(0)
+  error        String?    @db.Text
+  stages       StageLog[]
+}
+
+model StageLog {
+  id         String    @id @default(cuid())
+  runId      String
+  run        AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  topicId    String?
+  stage      String
+  status     String    @default("running")
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  log        String    @default("") @db.Text
+  error      String?   @db.Text
+  metaJson   String?   @db.Text
+
+  @@index([runId])
+}
+
+model JobLock {
+  jobName   String   @id
+  lockedAt  DateTime @default(now())
+  lockedBy  String
+  expiresAt DateTime
+}
+
+model Setting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  status    String   @default("new") // new | read | replied | spam
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([status])
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  status    String   @default("active")
+  source    String   @default("site")
+  createdAt DateTime @default(now())
+}
+
+model AdminLoginAttempt {
+  id          String   @id @default(cuid())
+  username    String
+  ipHash      String
+  success     Boolean
+  attemptedAt DateTime @default(now())
+
+  @@index([ipHash, attemptedAt])
+}
+
+model PageView {
+  id       String   @id @default(cuid())
+  path     String
+  postId   String?
+  viewedAt DateTime @default(now())
+  ipHash   String?
+
+  @@index([viewedAt])
+  @@index([postId])
+}
