@@ -143,23 +143,52 @@ function openAiResponseText(data: unknown, provider: string): string {
 }
 
 // ------------------------------------------------------------- OpenRouter ---
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free';
+// Free-model endpoints on OpenRouter come and go (a valid ID can 404 when no
+// provider currently serves it), so an ordered list of verified free IDs is
+// tried in turn. All four were confirmed live in OpenRouter's model catalog
+// on 2026-10-08 with $0 pricing and response_format (JSON mode) support.
+// OPENROUTER_MODEL env still overrides the whole list with a single model.
+const OPENROUTER_MODELS: string[] = process.env.OPENROUTER_MODEL
+  ? [process.env.OPENROUTER_MODEL]
+  : [
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+      'apodex/apodex-1.1-mini:free',
+    ];
 
 const openRouterCall: ProviderFn = async (prompt, opts) => {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('openrouter: OPENROUTER_API_KEY is not set');
   const siteUrl = process.env.SITE_URL || 'https://pawpilot.com';
-  const data = await fetchJson('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-      'HTTP-Referer': siteUrl,
-      'X-Title': 'PawPilot',
-    },
-    body: JSON.stringify(openAiChatBody(OPENROUTER_MODEL, prompt, opts)),
-  });
-  return openAiResponseText(data, 'openrouter');
+  const modelErrors: string[] = [];
+  for (const model of OPENROUTER_MODELS) {
+    try {
+      const data = await fetchJson('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+          'HTTP-Referer': siteUrl,
+          'X-Title': 'PawPilot',
+        },
+        body: JSON.stringify(openAiChatBody(model, prompt, opts)),
+      });
+      return openAiResponseText(data, `openrouter/${model}`);
+    } catch (err) {
+      // Fall through to the next model only when THIS model is unavailable
+      // (bad ID / no live endpoints). Auth, quota and rate-limit errors abort
+      // immediately — retrying them on another model is pointless.
+      const msg = errMessage(err);
+      if (/HTTP 404/.test(msg) || /no endpoints/i.test(msg)) {
+        console.warn(`[llm] openrouter model ${model} unavailable, trying next: ${msg}`);
+        modelErrors.push(`${model}: ${msg}`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`openrouter: all models unavailable: ${modelErrors.join(' | ')}`);
 };
 
 // ------------------------------------------------------------------ chain ---
