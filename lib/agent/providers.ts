@@ -143,7 +143,7 @@ function openAiResponseText(data: unknown, provider: string): string {
 }
 
 // ------------------------------------------------------------- OpenRouter ---
-const OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free';
 
 const openRouterCall: ProviderFn = async (prompt, opts) => {
   const key = process.env.OPENROUTER_API_KEY;
